@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Mini Softphone Panel
 
-## Getting Started
+## Project Overview
 
-First, run the development server:
+This application is a small but production-minded softphone panel built with Next.js, React, TypeScript, and Tailwind CSS. It uses a mock telephony engine to receive real-time call events, keeps state in a reducer, and renders a usable call interface for inbound, active, held, muted, and ended conversations.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Tech Stack
+
+- Next.js
+- React
+- TypeScript
+- Tailwind CSS
+
+## State Model
+
+Calls are stored by callId so multiple concurrent calls can be represented independently. Each record tracks the current lifecycle state, whether the microphone is muted, and the timestamp of the last event processed for that call.
+
+This keeps the UI predictable even when the telephony engine emits duplicate or late events. Instead of forcing status updates from button clicks, the reducer applies engine events and updates the call record only when the newer event timestamp is valid.
+
+## Event Ordering
+
+Every engine event includes an `at` timestamp. The reducer compares each arriving event against the previously processed `lastEventAt` value for the same call:
+
+```ts
+if (event.at <= call.lastEventAt) {
+  return call;
+}
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+This prevents duplicate or stale events from reverting a call to an older state. A late `ANSWERED` event cannot restore an ended call, and a duplicate `HELD` event cannot move an active call backwards in time.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Concurrent Calls
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+When a second inbound call arrives during an active conversation, it is added as a separate call record keyed by its `callId`. The panel renders all active calls together, allowing the user to interact with the waiting call while keeping the original call visible and stateful. If the user answers the new call, the current call is held and the newly answered call becomes active.
 
-## Learn More
+## Engine Integration
 
-To learn more about Next.js, take a look at the following resources:
+The project treats `lib/callEngine.ts` as an external mock engine and leaves it unmodified. The UI subscribes to engine events using `engine.on(...)`, dispatches them into a reducer, and allows user actions to invoke the engine methods (`answer`, `hangup`, `hold`, `resume`, `mute`, `unmute`) without overriding the engine as the source of truth.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Assumptions
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- A second incoming call is shown as a separate call card and can be answered or rejected while the current call remains active.
+- Ended calls remain stored in state but are displayed in a short recent-ended list so the app can retain correct lifecycle memory without showing stale active controls.
+- Invalid transitions such as a late `ANSWERED` event after `ENDED` are ignored to preserve a consistent state model.
 
-## Deploy on Vercel
+## Running Locally
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm install
+npm run dev
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Open the local development URL shown by Next.js in the terminal to interact with the panel.
